@@ -94,82 +94,83 @@ class Trainer(object):
 
     def validate(self):
         training = self.model.training
-        self.model.eval()
         metrics = []
+        with torch.no_grad():
+            self.model.eval()
+            val_loss_sum = 0
+            val_iterations = 0
+            for batch_idx, ((data, target), data_files, target_files) in tqdm.tqdm(
+                    enumerate(self.val_loader), total=len(self.val_loader),
+                    desc='Valid iteration={} epoch={}'.format(self.iteration, self.epoch), ncols=80, leave=False):
 
-        val_loss_sum = 0
-        for batch_idx, ((data, target), data_files, target_files) in tqdm.tqdm(
-                enumerate(self.val_loader), total=len(self.val_loader),
-                desc='Valid iteration={} epoch={}'.format(self.iteration, self.epoch), ncols=80, leave=False):
+                gc.collect()
+                assert data.size(0) == 1, "Set batch size to one for validation!"
 
-            gc.collect()
-            assert data.size(0) == 1, "Set batch size to one for validation!"
+                data, target = Variable(data), Variable(target)
+                if self.cuda:
+                    data, target = data.cuda(), target.cuda()
 
-            if self.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True), Variable(target)
+                score = self.model(data)
+                loss = nn.BCEWithLogitsLoss(size_average=self.size_average)(score, target)
 
-            score = self.model(data)
-            loss = nn.BCEWithLogitsLoss(size_average=self.size_average)(score, target)
-
-            if np.isnan(float(loss.data[0])):
-                raise ValueError('loss is nan while validating')
-            val_loss = float(loss.data[0])
-            val_loss_sum += val_loss
-
-            imgs = data.data.cpu()
-            lbl_preds = (expit(score.data.cpu().numpy()) * 255).astype(np.uint8)
-            lbl_trues = target.data.cpu()
-            for img, lbl_true, lbl_pred, data_file, target_file in zip(imgs, lbl_trues, lbl_preds, data_files, target_files):
-                img, lbl_true = self.val_loader.dataset.untransform(img, lbl_true)
-                lbl_pred = lbl_pred[0]
-                assert lbl_true.ndim == 2 and lbl_pred.ndim == 2
-                if self.overlaid_img_dir is not None:
+                if np.isnan(float(loss.item())):
+                    raise ValueError('loss is nan while validating')
+                val_loss = float(loss.item())
+                val_loss_sum += val_loss
+                val_iterations += 1
+                imgs = data.data.cpu()
+                lbl_preds = (expit(score.data.cpu().numpy()) * 255).astype(np.uint8)
+                lbl_trues = target.data.cpu()
+                for img, lbl_true, lbl_pred, data_file, target_file in zip(imgs, lbl_trues, lbl_preds, data_files, target_files):
+                    img, lbl_true = self.val_loader.dataset.untransform(img, lbl_true)
+                    lbl_pred = lbl_pred[0]
                     image_name, _ = os.path.splitext(os.path.split(data_file)[1])
-                    fname = os.path.join(self.overlaid_img_dir, "valid", image_name + "_target.png")
-                    utils.overlay_imp_on_img(img, lbl_true, fname, colormap='jet')
-                    fname = os.path.join(self.overlaid_img_dir, "valid", image_name + "_{:05d}.png".format(self.epoch))
-                    utils.overlay_imp_on_img(img, lbl_pred, fname, colormap='jet')
+                    assert lbl_true.ndim == 2 and lbl_pred.ndim == 2
+                    if self.overlaid_img_dir is not None:
+                        fname = os.path.join(self.overlaid_img_dir, "valid", image_name + "_target.png")
+                        utils.overlay_imp_on_img(img, lbl_true, fname, colormap='jet')
+                        fname = os.path.join(self.overlaid_img_dir, "valid", image_name + "_{:05d}.png".format(self.epoch))
+                        utils.overlay_imp_on_img(img, lbl_pred, fname, colormap='jet')
 
-                kl, kl_01, cc, rmse, r2, spearman = utils.label_accuracy(lbl_true, lbl_pred)
-                metrics.append((kl, kl_01, cc, rmse, r2, spearman))
-                # print("\nkl, kl_01, cc, rmse, r2, spearman", kl, kl_01, cc, rmse, r2, spearman)
+                    kl, kl_01, cc, rmse, r2, spearman = utils.label_accuracy(lbl_true, lbl_pred)
+                    metrics.append((kl, kl_01, cc, rmse, r2, spearman))
+                    # print("\nkl, kl_01, cc, rmse, r2, spearman", kl, kl_01, cc, rmse, r2, spearman)
 
-                self.print_log(image_name, val_loss, metrics[-1], is_valid=True)
+                    self.print_log(image_name, val_loss, metrics[-1], is_valid=True)
 
 
-        metrics = np.mean(metrics, axis=0)
-        print("valid metrics:", metrics)
+            metrics = np.mean(metrics, axis=0)
+            print("valid metrics:", metrics)
 
-        val_loss_sum /= len(self.val_loader)
-        self.print_log("summary_valid", val_loss_sum, metrics, is_valid=True)
+            val_loss_sum /= len(self.val_loader)
+            self.print_log("summary_valid", val_loss_sum, metrics, is_valid=True)
 
-        if self.eval_only:
-            return
+            if self.eval_only:
+                return
 
-        mean_rmse, mean_r2 = metrics[3],  metrics[4]
-        is_best = mean_rmse < self.best_mean_rmse
-        self.best_mean_rmse = min(mean_rmse, self.best_mean_rmse)
-        self.best_mean_r2 = max(mean_r2, self.best_mean_r2)
-        checkpoint_file = os.path.join(self.checkpoint_dir, 'checkpoint-{}.pth.tar'.format(self.dataset))
-        torch.save({
-            'epoch': self.epoch,
-            'iteration': self.iteration,
-            'arch': self.model.__class__.__name__,
-            'metrics': metrics,
-            'optim_state_dict': self.optim.state_dict(),
-            'model_state_dict': self.model.state_dict(),
-            'best_mean_rmse': self.best_mean_rmse,
-            'best_mean_r2': self.best_mean_r2,
-        }, checkpoint_file)
-        if is_best:
-            shutil.copy(checkpoint_file, os.path.join(self.checkpoint_dir, 'model_best-{}.pth.tar'.format(self.dataset)))
-        if (self.epoch + 1) % 10 == 0:
-            shutil.copy(checkpoint_file,
-                        os.path.join(self.checkpoint_dir, 'checkpoint-{}-{}.pth.tar'.format(self.dataset, self.epoch)))
+            mean_rmse, mean_r2 = metrics[3],  metrics[4]
+            is_best = mean_rmse < self.best_mean_rmse
+            self.best_mean_rmse = min(mean_rmse, self.best_mean_rmse)
+            self.best_mean_r2 = max(mean_r2, self.best_mean_r2)
+            checkpoint_file = os.path.join(self.checkpoint_dir, 'checkpoint-{}.pth.tar'.format(self.dataset))
+            torch.save({
+                'epoch': self.epoch,
+                'iteration': self.iteration,
+                'arch': self.model.__class__.__name__,
+                'metrics': metrics,
+                'optim_state_dict': self.optim.state_dict(),
+                'model_state_dict': self.model.state_dict(),
+                'best_mean_rmse': self.best_mean_rmse,
+                'best_mean_r2': self.best_mean_r2,
+            }, checkpoint_file)
+            if is_best:
+                shutil.copy(checkpoint_file, os.path.join(self.checkpoint_dir, 'model_best-{}.pth.tar'.format(self.dataset)))
+            if (self.epoch + 1) % 10 == 0:
+                shutil.copy(checkpoint_file,
+                            os.path.join(self.checkpoint_dir, 'checkpoint-{}-{}.pth.tar'.format(self.dataset, self.epoch)))
 
-        if training:
-            self.model.train()
+            if training:
+                self.model.train()
 
 
     def train_epoch(self):
@@ -197,18 +198,19 @@ class Trainer(object):
             assert self.model.training
             assert data.size(0) == 1, "Set batch size to one for training!"
 
+            data, target = Variable(data), Variable(target)
+            
             if self.cuda:
                 data, target = data.cuda(), target.cuda()
-            data, target = Variable(data), Variable(target)
 
             score = self.model(data)
-            assert target.data.cpu().numpy().min() >= 0 and target.data.cpu().numpy().max() <= 1
+            # assert target.data.cpu().numpy().min() >= 0 and target.data.cpu().numpy().max() <= 1
             loss = nn.BCEWithLogitsLoss(size_average=self.size_average)(score, target)
 
             loss = loss / self.iter_size
-            if np.isnan(float(loss.data[0])):
+            if np.isnan(float(loss.item())):
                 raise ValueError('loss is nan while training')
-            train_loss = float(loss.data[0])
+            train_loss = float(loss.item())
             loss_sum += train_loss * self.iter_size
 
             loss.backward()
@@ -228,9 +230,9 @@ class Trainer(object):
             for img, lbl_true, lbl_pred, data_file, target_file in zip(imgs, lbl_trues, lbl_preds, data_files, target_files):
                 img, lbl_true = self.train_loader.dataset.untransform(img, lbl_true)
                 lbl_pred = lbl_pred[0]
+                image_name, _ = os.path.splitext(os.path.split(data_file)[1])
                 assert lbl_true.ndim == 2 and lbl_pred.ndim == 2
-                if self.overlaid_img_dir is not None:
-                    image_name, _ = os.path.splitext(os.path.split(data_file)[1])
+                if self.overlaid_img_dir is not None and self.iteration % 50 == 0:
                     fname = os.path.join(self.overlaid_img_dir, "train", image_name + "_target.png")
                     utils.overlay_imp_on_img(img, lbl_true, fname, colormap='jet')
                     fname = os.path.join(self.overlaid_img_dir, "train", image_name + "_{:05d}.png".format(self.epoch))

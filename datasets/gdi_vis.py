@@ -2,9 +2,11 @@
 
 import collections
 import os
+import cv2
 
 import numpy as np
-import PIL.Image
+# import PIL.Image
+from torchvision import transforms
 import scipy.io
 import torch
 from torch.utils import data
@@ -38,40 +40,34 @@ class GDI_Vis_Base(data.Dataset):
         data_file = self.files[self.split][index]
         # load image
         img_file = data_file['img']
-        img = PIL.Image.open(img_file)
-        img = np.array(img, dtype=np.uint8)
+        img = cv2.imread(img_file)
         assert len(img.shape) == 3 # assumes color images and no alpha channel
 
         # load label
         lbl_file = data_file['lbl']
-        lbl = PIL.Image.open(lbl_file)
-        lbl = np.array(lbl)
+        lbl = cv2.imread(lbl_file, -1)
         assert lbl.max() < 256
-        lbl = lbl.astype(np.uint8)
         if self._transform:
             return self.transform(img, lbl), img_file, lbl_file
         else:
             return img, lbl, img_file, lbl_file
 
     def transform(self, img, lbl):
-        img = img[:, :, ::-1]  # RGB -> BGR
         img = img.astype(np.float32)
         img -= self.mean_bgr
-        img = img.transpose(2, 0, 1) # C x H x W
 
         if self.binarize:
             lbl = lbl > 255.0 * 2 / 3
         else:
             lbl = lbl / 255.0
-        lbl = lbl[:, :, None]  # add channel axis
-        lbl = lbl.transpose(2, 0, 1) # C x H x W
-        img = torch.from_numpy(img).float()
-        lbl = torch.from_numpy(lbl).float()
+        lbl = lbl[:, :, None]
+        img = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)
+        lbl = torch.from_numpy(lbl).float().permute(2, 0, 1)
         return img, lbl
 
     def untransform(self, img, lbl):
+        img = img.permute(1, 2, 0)
         img = img.numpy()
-        img = img.transpose(1, 2, 0)
         img += self.mean_bgr
         img = img.astype(np.uint8)
         img = img[:, :, ::-1]

@@ -27,7 +27,7 @@ configurations = {
         iter_size=1,
         gamma=0.1,
         step_size=20000,
-        interval_validate=200,
+        interval_validate=400,
     ),
     # GDI FCN32s
     2: dict(
@@ -38,7 +38,7 @@ configurations = {
         iter_size=20,
         gamma=0.1,
         step_size=5000,
-        interval_validate=200,
+        interval_validate=400,
     ),
 }
 
@@ -60,19 +60,19 @@ def get_parameters(model, bias=False, fcn_type='fcn32'):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='gdi', help='name of dataset, gdi or massvis (default: gdi)')
-    parser.add_argument('--dataset_dir', type=str, default='/path/to/datase_dirt', help='dataset directory')
+    parser.add_argument('--dataset_dir', type=str, default='/home/kunato/visimportance-in-pytorch/data', help='dataset directory')
     parser.add_argument('--fcn_type', type=str, help='FCN type, fcn32 or fcn16 (default: gdi)', default='fcn32',
                         choices=['fcn32', 'fcn16'])
-    parser.add_argument('--overlaid_img_dir', type=str, default='/path/to/overlaid_img_dir',
+    parser.add_argument('--overlaid_img_dir', type=str, default='/home/kunato/visimportance-in-pytorch/out',
                         help='output directory path for images with heatpmap overlaid onto input images')
-    parser.add_argument('--pretrained_model', type=str, default='/path/to/pretrained_model',
+    parser.add_argument('--pretrained_model', type=str, default='/home/kunato/visimportance-in-pytorch/pretrained/gdi_fcn32.pth',
                         help='pretrained model converted from Caffe models')
     parser.add_argument('--config', type=int, default=1, choices=configurations.keys(),
                         help='configuration for training where several hyperparameters are defined')
-    parser.add_argument('--log_file', type=str, default='F:/dataset/visimportance/log', help='/path/to/log_file')
+    parser.add_argument('--log_file', type=str, default='/home/kunato/visimportance-in-pytorch/out/log.txt', help='/path/to/log_file')
     parser.add_argument('--resume', type=str, default='',
                         help='checkpoint file to be loaded when retraining models')
-    parser.add_argument('--checkpoint_dir', type=str, default='/path/to/checkpoint_dir',
+    parser.add_argument('--checkpoint_dir', type=str, default='/home/kunato/visimportance-in-pytorch/out',
                         help='checkpoint file to be saved in each epoch')
     parser.add_argument('--eval_only', action='store_true', help='evaluation only')
     parser.add_argument('--gpu', type=int, default=0, help='GPU id (default: 0)')
