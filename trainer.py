@@ -16,6 +16,12 @@ import torch.nn as nn
 import utils
 import tqdm
 
+print(torch.cuda.is_available())
+device = torch.device("cuda:1")
+
+def to_device(tensor):
+    return tensor.to(device)
+
 class Trainer(object):
 
     def __init__(self, cuda, model, optimizer,
@@ -66,7 +72,6 @@ class Trainer(object):
             'train/cc',
             'train/rmse',
             'train/r2',
-            'train/spearman',
             'valid/fname',
             'valid/loss',
             'valid/kl',
@@ -74,7 +79,6 @@ class Trainer(object):
             'valid/cc',
             'valid/rmse',
             'valid/r2',
-            'valid/spearman',
             'elapsed_time',
         ]
         if not os.path.exists(self.log_file):
@@ -99,28 +103,28 @@ class Trainer(object):
             self.model.eval()
             val_loss_sum = 0
             val_iterations = 0
-            for batch_idx, ((data, target), data_files, target_files) in tqdm.tqdm(
+            for batch_idx, ((imgs, target_cpu), data_files, target_files) in tqdm.tqdm(
                     enumerate(self.val_loader), total=len(self.val_loader),
                     desc='Valid iteration={} epoch={}'.format(self.iteration, self.epoch), ncols=80, leave=False):
 
                 gc.collect()
-                assert data.size(0) == 1, "Set batch size to one for validation!"
+                assert imgs.size(0) == 1, "Set batch size to one for validation!"
 
-                data, target = Variable(data), Variable(target)
+                data, target = Variable(imgs), Variable(target_cpu)
                 if self.cuda:
-                    data, target = data.cuda(), target.cuda()
+                    data, target = to_device(data), to_device(target)
 
                 score = self.model(data)
                 loss = nn.BCEWithLogitsLoss(size_average=self.size_average)(score, target)
 
-                if np.isnan(float(loss.item())):
-                    raise ValueError('loss is nan while validating')
+                # if np.isnan(float(loss.item())):
+                #     raise ValueError('loss is nan while validating')
                 val_loss = float(loss.item())
                 val_loss_sum += val_loss
                 val_iterations += 1
-                imgs = data.data.cpu()
+                imgs = imgs.numpy()
                 lbl_preds = (expit(score.data.cpu().numpy()) * 255).astype(np.uint8)
-                lbl_trues = target.data.cpu()
+                lbl_trues = target_cpu.numpy()
                 for img, lbl_true, lbl_pred, data_file, target_file in zip(imgs, lbl_trues, lbl_preds, data_files, target_files):
                     img, lbl_true = self.val_loader.dataset.untransform(img, lbl_true)
                     lbl_pred = lbl_pred[0]
@@ -132,8 +136,8 @@ class Trainer(object):
                         fname = os.path.join(self.overlaid_img_dir, "valid", image_name + "_{:05d}.png".format(self.epoch))
                         utils.overlay_imp_on_img(img, lbl_pred, fname, colormap='jet')
 
-                    kl, kl_01, cc, rmse, r2, spearman = utils.label_accuracy(lbl_true, lbl_pred)
-                    metrics.append((kl, kl_01, cc, rmse, r2, spearman))
+                    kl, kl_01, cc, rmse, r2 = utils.label_accuracy(lbl_true, lbl_pred)
+                    metrics.append((kl, kl_01, cc, rmse, r2))
                     # print("\nkl, kl_01, cc, rmse, r2, spearman", kl, kl_01, cc, rmse, r2, spearman)
 
                     self.print_log(image_name, val_loss, metrics[-1], is_valid=True)
@@ -143,7 +147,7 @@ class Trainer(object):
             print("valid metrics:", metrics)
 
             val_loss_sum /= len(self.val_loader)
-            self.print_log("summary_valid", val_loss_sum, metrics, is_valid=True)
+            self.print_log("summary_valid", '', metrics, is_valid=True)
 
             if self.eval_only:
                 return
@@ -178,10 +182,10 @@ class Trainer(object):
         self.model.train()
         self.optim.zero_grad()
 
-        loss_sum = 0
+        # loss_sum = 0
         metrics = []
 
-        for batch_idx, ((data, target), data_files, target_files) in tqdm.tqdm(
+        for batch_idx, ((imgs, target_cpu), data_files, target_files) in tqdm.tqdm(
                 enumerate(self.train_loader), total=len(self.train_loader),
                 desc='Train epoch={}, iter={}'.format(self.epoch, self.iteration), ncols=80, leave=False):
             iteration = batch_idx + self.epoch * len(self.train_loader)
@@ -196,22 +200,22 @@ class Trainer(object):
                 self.validate()
 
             assert self.model.training
-            assert data.size(0) == 1, "Set batch size to one for training!"
+            assert imgs.size(0) == 1, "Set batch size to one for training!"
 
-            data, target = Variable(data), Variable(target)
+            data, target = Variable(imgs), Variable(target_cpu)
             
             if self.cuda:
-                data, target = data.cuda(), target.cuda()
+                data, target = to_device(data), to_device(target)
 
             score = self.model(data)
-            # assert target.data.cpu().numpy().min() >= 0 and target.data.cpu().numpy().max() <= 1
             loss = nn.BCEWithLogitsLoss(size_average=self.size_average)(score, target)
 
             loss = loss / self.iter_size
-            if np.isnan(float(loss.item())):
-                raise ValueError('loss is nan while training')
-            train_loss = float(loss.item())
-            loss_sum += train_loss * self.iter_size
+            # if np.isnan(float(loss.item())):
+            #     raise ValueError('loss is nan while training')
+            # train_loss = float(loss.item())
+            # print(train_loss)
+            # loss_sum += train_loss * self.iter_size
 
             loss.backward()
             self.bwd_counter += 1
@@ -224,9 +228,9 @@ class Trainer(object):
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
-            imgs = data.data.cpu()
+            imgs = imgs.numpy()
             lbl_preds =(expit(score.data.cpu().numpy()) * 255).astype(np.uint8)
-            lbl_trues = target.data.cpu()
+            lbl_trues = target_cpu.numpy()
             for img, lbl_true, lbl_pred, data_file, target_file in zip(imgs, lbl_trues, lbl_preds, data_files, target_files):
                 img, lbl_true = self.train_loader.dataset.untransform(img, lbl_true)
                 lbl_pred = lbl_pred[0]
@@ -239,17 +243,17 @@ class Trainer(object):
                     utils.overlay_imp_on_img(img, lbl_pred, fname, colormap='jet')
 
 
-                kl, kl_01, cc, rmse, r2, spearman = utils.label_accuracy(lbl_true, lbl_pred)
+                kl, kl_01, cc, rmse, r2 = utils.label_accuracy(lbl_true, lbl_pred)
                 # print("\nkl, kl_01, cc, rmse, r2, spearman", kl, kl_01, cc, rmse, r2, spearman)
 
-                metrics.append((kl, kl_01, cc, rmse, r2, spearman))
-                self.print_log(image_name, train_loss, metrics[-1], is_valid=False)
+                metrics.append((kl, kl_01, cc, rmse, r2))
+                self.print_log(image_name, '', metrics[-1], is_valid=False)
 
         metrics = np.mean(metrics, axis=0)
         print("train metrics:", metrics)
 
         loss_sum /= len(self.train_loader)
-        self.print_log("summary_train", loss_sum, metrics, is_valid=False)
+        self.print_log("summary_train", '', metrics, is_valid=False)
 
 
     def train(self):

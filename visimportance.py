@@ -17,6 +17,12 @@ import models
 from trainer import Trainer
 import utils
 
+
+device = torch.device("cuda:1")
+
+def to_device(tensor):
+    return tensor.to(device)
+
 configurations = {
     # massvis FCN32s
     1: dict(
@@ -75,7 +81,7 @@ def main():
     parser.add_argument('--checkpoint_dir', type=str, default='/home/kunato/visimportance-in-pytorch/out',
                         help='checkpoint file to be saved in each epoch')
     parser.add_argument('--eval_only', action='store_true', help='evaluation only')
-    parser.add_argument('--gpu', type=int, default=0, help='GPU id (default: 0)')
+    parser.add_argument('--gpu', type=int, default=1, help='GPU id (default: 0)')
     args = parser.parse_args()
 
     utils.create_dir(os.path.join(args.overlaid_img_dir, "train"))
@@ -89,7 +95,7 @@ def main():
     log_file = args.log_file
     resume = args.resume
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+    # os.environ['CUDA_VISIBLE_DEVICES'] = str(1)
     cuda = torch.cuda.is_available()
     args.cuda = cuda
     if args.cuda:
@@ -149,7 +155,7 @@ def main():
             model._initialize_weights()
 
     if cuda:
-        model = model.cuda()
+        model = to_device(model)
 
     # 3. optimizer
 

@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.stats.mstats
 import matplotlib.pyplot as plt
-from PIL import Image
+import cv2
 import os
 
 def create_dir(dir_name):
@@ -53,11 +53,11 @@ def label_accuracy(label_trues, label_preds):
     chance = 0.5
     kl = get_kl(gt_1d, pred_1d, chance=chance)
     kl_01 = get_kl(gt_1d_01, pred_1d_01, chance=chance)
-    spearman = get_spearmanr(gt_1d, pred_1d)
+#     spearman = get_spearmanr(gt_1d, pred_1d)
     r2 = r2coef(gt_1d, pred_1d)
     rmse = get_rmse(gt_1d_01, pred_1d_01)
 
-    return kl, kl_01, cc, rmse, r2, spearman
+    return kl, kl_01, cc, rmse, r2
 
 def overlay_imp_on_img(img, imp, fname, colormap='jet'):
 
@@ -65,8 +65,5 @@ def overlay_imp_on_img(img, imp, fname, colormap='jet'):
     img2 = np.array(img, dtype=np.uint8)
     imp2 = np.array(imp, dtype=np.uint8)
     imp3 = (cm(imp2)[:, :, :3] * 255).astype(np.uint8)
-    img3 = Image.fromarray(img2)
-    imp3 = Image.fromarray(imp3)
-
-    im_alpha = Image.blend(img3, imp3, 0.5)
-    im_alpha.save(fname)
+    im_alpha = cv2.addWeighted(img2, 0.5, imp3, 0.5, 0)
+    cv2.imwrite(fname, im_alpha)

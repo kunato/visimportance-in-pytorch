@@ -1,0 +1,7 @@
+out/
+out2/
+**/*.png
+**/*.jpg
+data/
+*.pyc
+*.prof

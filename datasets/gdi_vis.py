@@ -15,10 +15,9 @@ class GDI_Vis_Base(data.Dataset):
 
     mean_bgr = np.array([104.00699, 116.66877, 122.67892])
 
-    def __init__(self, split='train', transform=False, binarize=False):
+    def __init__(self, split='train', transform=False):
         self.split = split
         self._transform = transform
-        self.binarize = binarize
 
     def list_files(self, dataset_dir, image_dir, imp_dir, image_ext):
         self.files = collections.defaultdict(list)
@@ -56,34 +55,27 @@ class GDI_Vis_Base(data.Dataset):
         img = img.astype(np.float32)
         img -= self.mean_bgr
 
-        if self.binarize:
-            lbl = lbl > 255.0 * 2 / 3
-        else:
-            lbl = lbl / 255.0
+        lbl = lbl / 255.0
         lbl = lbl[:, :, None]
         img = torch.from_numpy(img.astype(np.float32)).permute(2, 0, 1)
         lbl = torch.from_numpy(lbl).float().permute(2, 0, 1)
         return img, lbl
 
     def untransform(self, img, lbl):
-        img = img.permute(1, 2, 0)
-        img = img.numpy()
+        img = img.transpose(1, 2, 0)
         img += self.mean_bgr
         img = img.astype(np.uint8)
         img = img[:, :, ::-1]
-        lbl = lbl.numpy()
+        
         lbl = lbl[0, :, :]
-        if self.binarize:
-            lbl = (lbl * 3 / 2) >= (1 - 0.0001) * 255 # lbl > 255.0 * 2 / 3
-        else:
-            lbl = lbl * 255.0
+        lbl = lbl * 255.0
         lbl = lbl.astype(np.uint8)
         return img, lbl
 
 
 class GDI(GDI_Vis_Base):
-    def __init__(self, root, image_dir, imp_dir, split='train', transform=False, binarize=False):
-        super(GDI, self).__init__(split=split, transform=transform, binarize=binarize)
+    def __init__(self, root, image_dir, imp_dir, split='train', transform=False):
+        super(GDI, self).__init__(split=split, transform=transform)
 
         image_ext = 'jpg'
         dataset_dir = os.path.join(root, 'gdi')
@@ -91,8 +83,8 @@ class GDI(GDI_Vis_Base):
 
 
 class Massvis(GDI_Vis_Base):
-    def __init__(self, root, image_dir, imp_dir, split='train', transform=False, binarize=False):
-        super(Massvis, self).__init__(split=split, transform=transform, binarize=binarize)
+    def __init__(self, root, image_dir, imp_dir, split='train', transform=False):
+        super(Massvis, self).__init__(split=split, transform=transform)
 
         image_ext = 'png'
         dataset_dir = os.path.join(root, 'massvis')
